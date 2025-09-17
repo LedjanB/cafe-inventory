@@ -24,8 +24,14 @@ app.get('/script.js', (req, res) => {
 
 // Database configuration
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    connectionString: process.env.DATABASE_URL || process.env.SUPABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    },
+    // Add connection timeout and retry settings
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    max: 10
 });
 
 // Initialize database
