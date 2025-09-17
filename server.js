@@ -142,14 +142,17 @@ app.get('/api/history', async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
         
-        // Get total count first
-        const countResult = await supabaseQuery('history?select=count', {
+        // Get total count first - use proper PostgREST count syntax
+        const countResponse = await fetch(`${SUPABASE_URL}/rest/v1/history?select=*`, {
+            method: 'HEAD',
             headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                 'Prefer': 'count=exact'
             }
         });
         
-        const totalCount = countResult.length > 0 ? countResult[0].count : 0;
+        const totalCount = parseInt(countResponse.headers.get('content-range')?.split('/')[1] || '0');
         
         // Get paginated data
         const data = await supabaseQuery(`history?select=*&order=date.desc,item_name.asc&limit=${limit}&offset=${offset}`);
