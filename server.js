@@ -22,8 +22,8 @@ app.get('/script.js', (req, res) => {
 });
 
 // Supabase configuration
-const SUPABASE_URL = 'https://aunxklyjxakbprknyisr.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bnhrbHlqeGFrYnBya255aXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNTcxMTksImV4cCI6MjA3MzYzMzExOX0.sfN0rYnz7gKYj4eHXakgmBerfzvEmScK7hJwrSrvM-s';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_KEY;
 
 // Helper function for Supabase API calls
 async function supabaseQuery(endpoint, options = {}) {
