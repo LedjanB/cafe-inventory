@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History - Cafe Inventory Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">Cafe Inventory Tracker</div>
+                <nav>
+                    <ul>
+                        <li><a href="/">Daily Count</a></li>
+                        <li><a href="/history" class="active">History</a></li>
+                        <li><a href="/summary">Weekly Summary</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            <h1 class="page-title">Inventory History</h1>
+            
+            <div id="message-container"></div>
+
+            <div class="table-container">
+                <div id="loading-history" class="text-center" style="padding: 2rem;">
+                    <div class="loading"></div>
+                    Loading history...
+                </div>
+                
+                <div id="history-content" class="hidden">
+                    <table id="history-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Item Name</th>
+                                <th>Restocks Received</th>
+                                <th>Current Count</th>
+                                <th>Sold (Calculated)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="no-history" class="text-center hidden" style="padding: 2rem;">
+                    <p>No history records found.</p>
+                </div>
+            </div>
+
+            <div class="pagination" id="pagination-container">
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        // Initialize the history page
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeHistory();
+        });
+    </script>
+</body>
+</html>

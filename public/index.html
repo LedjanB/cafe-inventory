@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Count - Cafe Inventory Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">Cafe Inventory Tracker</div>
+                <nav>
+                    <ul>
+                        <li><a href="/" class="active">Daily Count</a></li>
+                        <li><a href="/history">History</a></li>
+                        <li><a href="/summary">Weekly Summary</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            <h1 class="page-title">Daily Inventory Count</h1>
+            
+            <div id="message-container"></div>
+
+            <div class="form-container">
+                <form id="count-form">
+                    <div class="form-group">
+                        <label for="item-name">Item Name *</label>
+                        <input type="text" id="item-name" name="item_name" required 
+                               placeholder="e.g., Colas, Coffee, Sandwiches">
+                        <div class="error-message" id="item-name-error"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="current-count">Current Count (Right Now) *</label>
+                        <input type="number" id="current-count" name="current_count" 
+                               min="0" required placeholder="Physical count right now">
+                        <div class="error-message" id="current-count-error"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="restocks-received">Restocks Received Today</label>
+                        <input type="number" id="restocks-received" name="restocks_received" 
+                               min="0" value="0" placeholder="New stock delivered today">
+                        <div class="error-message" id="restocks-received-error"></div>
+                    </div>
+
+                    <div class="calculation-preview" id="calculation-preview" style="display: none;">
+                        <div class="calculation-box">
+                            <h4>Sales Calculation:</h4>
+                            <p><span id="calc-starting">0</span> (starting) + <span id="calc-restocks">0</span> (restocks) - <span id="calc-current">0</span> (current) = <strong><span id="calc-sold">0</span> SOLD YESTERDAY</strong></p>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" id="submit-btn">
+                        <span id="submit-text">Calculate & Save</span>
+                        <span id="loading-spinner" class="loading hidden"></span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="today-entries">
+                <div class="card">
+                    <div class="card-title">Today's Entries</div>
+                    <div id="entries-container">
+                        <div id="loading-entries" class="text-center">
+                            <div class="loading"></div>
+                            Loading today's entries...
+                        </div>
+                        <div id="no-entries" class="text-center hidden">
+                            <p>No entries recorded for today yet.</p>
+                        </div>
+                        <div id="entries-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="theft-detection">
+                <div class="card">
+                    <div class="card-title">Theft Detection</div>
+                    <div class="theft-form">
+                        <div class="form-group">
+                            <label for="item-select">Select Item:</label>
+                            <select id="item-select">
+                                <option value="">Choose an item...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="actual-receipts">Actual Sales (from receipts):</label>
+                            <input type="number" id="actual-receipts" min="0" placeholder="Enter actual sales count">
+                        </div>
+                        <button type="button" id="check-theft" class="btn">Check for Theft</button>
+                    </div>
+                    <div id="theft-results" class="theft-results hidden">
+                        <div class="comparison-box">
+                            <div class="comparison-item">
+                                <span class="label">Calculated Sales:</span>
+                                <span id="calculated-sales" class="value">-</span>
+                            </div>
+                            <div class="comparison-item">
+                                <span class="label">Actual Sales:</span>
+                                <span id="actual-sales" class="value">-</span>
+                            </div>
+                            <div class="comparison-item">
+                                <span class="label">Difference:</span>
+                                <span id="difference" class="value">-</span>
+                            </div>
+                            <div id="theft-alert" class="alert hidden"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        // Initialize the daily count page
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeDailyCount();
+        });
+    </script>
+</body>
+</html>
