@@ -33,7 +33,6 @@ async function supabaseQuery(endpoint, options = {}) {
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
-            'Prefer': 'return=representation',
             ...options.headers
         },
         ...options
@@ -148,13 +147,13 @@ app.get('/api/history', async (req, res) => {
     
     try {
         // Get total count first
-        const countResult = await supabaseQuery('history?select=count', {
+        const countResult = await supabaseQuery('history?select=count(*)', {
             headers: {
                 'Prefer': 'count=exact'
             }
         });
         
-        const total = countResult.length;
+        const total = countResult.count;
         
         // Get paginated data
         const historyResult = await supabaseQuery(`history?select=*&order=date.desc,item_name.asc&limit=${limit}&offset=${offset}`);
