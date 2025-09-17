@@ -50,23 +50,14 @@ async function supabaseQuery(endpoint, options = {}) {
 // Initialize database
 async function initializeDatabase() {
     try {
-        await supabaseQuery('history', {
-            method: 'POST',
-            body: JSON.stringify({
-                select: '*',
-                eq: 'id',
-                neq: 'id'
-            })
-        });
-        
-        console.log('Supabase database initialized');
+        // Just test the connection by trying to fetch from history table
+        await supabaseQuery('history?limit=1');
+        console.log('Supabase database connection verified');
     } catch (err) {
-        console.error('Database initialization error:', err);
+        console.error('Database connection error:', err);
+        console.log('Make sure the history table exists in your Supabase database');
     }
 }
-
-// Initialize database on startup
-initializeDatabase();
 
 // API Routes
 app.get('/api/counts/today', async (req, res) => {
@@ -270,6 +261,7 @@ app.get('/summary', (req, res) => {
 // Start server
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
+    initializeDatabase();
 });
 
 // Handle unhandled promise rejections
