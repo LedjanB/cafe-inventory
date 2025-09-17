@@ -101,7 +101,7 @@ app.post('/api/counts', async (req, res) => {
             sold_calculated = 0;
         }
         
-        // Insert or update today's count using upsert
+        // Insert or update today's count using proper upsert for PostgreSQL
         const upsertData = {
             item_name,
             date: today,
@@ -111,14 +111,30 @@ app.post('/api/counts', async (req, res) => {
             sold_calculated
         };
 
-        // Use proper Supabase upsert with conflict resolution
-        await supabaseQuery('history', {
-            method: 'POST',
+        // First try to update existing record
+        const updateResult = await supabaseQuery(`history?item_name=eq.${encodeURIComponent(item_name)}&date=eq.${today}`, {
+            method: 'PATCH',
             headers: {
-                'Prefer': 'resolution=merge-duplicates,return=minimal'
+                'Prefer': 'return=minimal'
             },
-            body: JSON.stringify(upsertData)
+            body: JSON.stringify({
+                yesterday_count: starting_count,
+                current_count: parseInt(current_count),
+                restocks_received: parseInt(restocks_received),
+                sold_calculated
+            })
         });
+
+        // If no rows were updated, insert new record
+        if (updateResult.length === 0) {
+            await supabaseQuery('history', {
+                method: 'POST',
+                headers: {
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify(upsertData)
+            });
+        }
         
         res.status(200).json({ 
             success: true,
