@@ -67,17 +67,7 @@ app.get('/api/counts/today', async (req, res) => {
         const today = new Date().toISOString().split('T')[0];
         console.log('Today\'s date:', today);
         
-        const result = await supabaseQuery('history', {
-            method: 'GET',
-            headers: {
-                'Range': '0-9'
-            },
-            body: JSON.stringify({
-                select: '*',
-                eq: 'date',
-                eq: today
-            })
-        });
+        const result = await supabaseQuery(`history?date=eq.${today}`);
         
         console.log('Query result:', result.length, 'rows');
         
@@ -102,19 +92,7 @@ app.post('/api/counts', async (req, res) => {
         const yesterdayStr = yesterday.toISOString().split('T')[0];
         
         // Get yesterday's ending count (which becomes today's starting count)
-        const yesterdayResult = await supabaseQuery('history', {
-            method: 'GET',
-            headers: {
-                'Range': '0-0'
-            },
-            body: JSON.stringify({
-                select: 'current_count',
-                eq: 'item_name',
-                eq: item_name,
-                eq: 'date',
-                eq: yesterdayStr
-            })
-        });
+        const yesterdayResult = await supabaseQuery(`history?item_name=eq.${encodeURIComponent(item_name)}&date=eq.${yesterdayStr}&select=current_count`);
         
         let sold_calculated = 0;
         let starting_count = 0;
@@ -129,17 +107,22 @@ app.post('/api/counts', async (req, res) => {
             sold_calculated = 0;
         }
         
-        // Insert or update today's count
+        // Insert or update today's count using upsert
+        const upsertData = {
+            item_name,
+            date: today,
+            yesterday_count: starting_count,
+            current_count: parseInt(current_count),
+            restocks_received: parseInt(restocks_received),
+            sold_calculated
+        };
+
         await supabaseQuery('history', {
             method: 'POST',
-            body: JSON.stringify({
-                item_name,
-                date: today,
-                yesterday_count: starting_count,
-                current_count: parseInt(current_count),
-                restocks_received: parseInt(restocks_received),
-                sold_calculated
-            })
+            headers: {
+                'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify(upsertData)
         });
         
         res.status(200).json({ 
@@ -164,18 +147,17 @@ app.get('/api/history', async (req, res) => {
     const offset = (page - 1) * limit;
     
     try {
-        const countResult = await supabaseQuery('history', {
-            method: 'HEAD'
-        });
-        
-        const total = parseInt(countResult.headers.get('row-count'));
-        
-        const historyResult = await supabaseQuery('history', {
-            method: 'GET',
+        // Get total count first
+        const countResult = await supabaseQuery('history?select=count', {
             headers: {
-                'Range': `${offset}-${offset + limit - 1}`
+                'Prefer': 'count=exact'
             }
         });
+        
+        const total = countResult.length;
+        
+        // Get paginated data
+        const historyResult = await supabaseQuery(`history?select=*&order=date.desc,item_name.asc&limit=${limit}&offset=${offset}`);
         
         res.json({
             data: historyResult,
@@ -193,30 +175,60 @@ app.get('/api/summary', async (req, res) => {
     const { days, startDate, endDate } = req.query;
     
     try {
-        let query = '';
-        
-        const params = [];
+        let query = 'history?select=*';
         
         if (days) {
             const date = new Date();
             date.setDate(date.getDate() - parseInt(days));
-            query += `?eq(date,${date.toISOString().split('T')[0]})`;
+            const dateStr = date.toISOString().split('T')[0];
+            query += `&date=gte.${dateStr}`;
         } else if (startDate && endDate) {
-            query += `?between(date,${startDate},${endDate})`;
+            query += `&date=gte.${startDate}&date=lte.${endDate}`;
         }
         
-        const summaryResult = await supabaseQuery(`history${query}`, {
-            method: 'GET'
+        const summaryResult = await supabaseQuery(query);
+        
+        // Group by item_name and calculate aggregates
+        const itemGroups = {};
+        summaryResult.forEach(row => {
+            if (!itemGroups[row.item_name]) {
+                itemGroups[row.item_name] = {
+                    item_name: row.item_name,
+                    total_sold: 0,
+                    total_restocked: 0,
+                    current_stock: 0,
+                    starting_stocks: [],
+                    days_tracked: 0
+                };
+            }
+            
+            itemGroups[row.item_name].total_sold += row.sold_calculated || 0;
+            itemGroups[row.item_name].total_restocked += row.restocks_received || 0;
+            itemGroups[row.item_name].current_stock = row.current_count || 0;
+            itemGroups[row.item_name].starting_stocks.push(row.yesterday_count || 0);
+            itemGroups[row.item_name].days_tracked++;
         });
         
-        // Simple calculation for display
-        const enhancedRows = summaryResult.map(row => ({
-            ...row,
-            avg_starting_stock: Math.round(row.avg_starting_stock * 100) / 100,
-            turnover_rate: row.avg_starting_stock > 0 
-                ? Math.round((row.total_sold / row.avg_starting_stock / row.days_tracked) * 10000) / 100
-                : 0
-        }));
+        // Calculate averages and turnover rates
+        const enhancedRows = Object.values(itemGroups).map(item => {
+            const avg_starting_stock = item.starting_stocks.length > 0 
+                ? item.starting_stocks.reduce((a, b) => a + b, 0) / item.starting_stocks.length 
+                : 0;
+            
+            const turnover_rate = avg_starting_stock > 0 && item.days_tracked > 0
+                ? (item.total_sold / avg_starting_stock / item.days_tracked) * 100
+                : 0;
+            
+            return {
+                item_name: item.item_name,
+                total_sold: item.total_sold,
+                total_restocked: item.total_restocked,
+                avg_starting_stock: Math.round(avg_starting_stock * 100) / 100,
+                current_stock: item.current_stock,
+                days_tracked: item.days_tracked,
+                turnover_rate: Math.round(turnover_rate * 100) / 100
+            };
+        });
         
         res.json(enhancedRows);
     } catch (err) {
@@ -230,15 +242,11 @@ app.delete('/api/counts/:itemName/:date', async (req, res) => {
     const { itemName, date } = req.params;
     
     try {
-        const result = await supabaseQuery(`history?eq(item_name,${itemName})&eq(date,${date})`, {
+        const result = await supabaseQuery(`history?item_name=eq.${encodeURIComponent(itemName)}&date=eq.${date}`, {
             method: 'DELETE'
         });
         
-        if (result.length === 0) {
-            res.status(404).json({ error: 'Entry not found' });
-        } else {
-            res.json({ success: true, message: 'Entry deleted successfully' });
-        }
+        res.json({ success: true, message: 'Entry deleted successfully' });
     } catch (err) {
         console.error('Error deleting entry:', err);
         res.status(500).json({ error: 'Failed to delete entry' });
