@@ -5,7 +5,8 @@
   "main": "production-server.js",
   "scripts": {
     "start": "node production-server.js",
-    "dev": "nodemon production-server.js"
+    "dev": "nodemon production-server.js",
+    "postinstall": "npm rebuild sqlite3"
   },
   "keywords": [
     "inventory",
