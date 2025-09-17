@@ -1,5 +1,5 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const path = require('path');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -14,38 +14,37 @@ app.use(bodyParser.json());
 app.use(express.static('public'));
 
 // Database configuration
-const dbPath = process.env.DATABASE_PATH || './inventory.db';
-const db = new sqlite3.Database(dbPath);
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
 // Initialize database
-function initializeDatabase() {
-    db.serialize(() => {
-        // First, try to add the yesterday_count column if it doesn't exist
-        db.run(`ALTER TABLE history ADD COLUMN yesterday_count INTEGER`, (err) => {
-            // Ignore error if column already exists
-        });
-        
-        db.run(`
+async function initializeDatabase() {
+    try {
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                item_name TEXT NOT NULL,
-                date DATE NOT NULL,
+                id SERIAL PRIMARY KEY,
+                item_name VARCHAR(255) NOT NULL,
+                date DATE NOT NULL DEFAULT CURRENT_DATE,
                 yesterday_count INTEGER DEFAULT 0,
                 current_count INTEGER NOT NULL,
                 restocks_received INTEGER DEFAULT 0,
                 sold_calculated INTEGER DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 UNIQUE(item_name, date)
             )
         `);
         
-        db.run(`
+        await pool.query(`
             CREATE INDEX IF NOT EXISTS idx_history_item_date 
             ON history(item_name, date)
         `);
         
-        console.log('SQLite database initialized');
-    });
+        console.log('PostgreSQL database initialized');
+    } catch (err) {
+        console.error('Database initialization error:', err);
+    }
 }
 
 // Initialize database on startup
@@ -55,14 +54,8 @@ initializeDatabase();
 app.get('/api/counts/today', async (req, res) => {
     try {
         const today = new Date().toISOString().split('T')[0];
-        db.all('SELECT * FROM history WHERE date = ?', [today], (err, rows) => {
-            if (err) {
-                console.error('Error fetching today\'s counts:', err);
-                res.status(500).json({ error: 'Failed to fetch today\'s counts' });
-            } else {
-                res.json(rows);
-            }
-        });
+        const result = await pool.query('SELECT * FROM history WHERE date = $1', [today]);
+        res.json(result.rows);
     } catch (err) {
         console.error('Error fetching today\'s counts:', err);
         res.status(500).json({ error: 'Failed to fetch today\'s counts' });
@@ -83,48 +76,43 @@ app.post('/api/counts', async (req, res) => {
         const yesterdayStr = yesterday.toISOString().split('T')[0];
         
         // Get yesterday's ending count (which becomes today's starting count)
-        db.get('SELECT current_count FROM history WHERE item_name = ? AND date = ? ORDER BY id DESC LIMIT 1', 
-               [item_name, yesterdayStr], (err, yesterdayRow) => {
-            if (err) {
-                console.error('Error fetching yesterday count:', err);
-                return res.status(500).json({ error: 'Failed to fetch yesterday count' });
-            }
-            
-            let sold_calculated = 0;
-            let starting_count = 0;
-            
-            if (yesterdayRow) {
-                // Normal day: use yesterday's ending count as starting count
-                starting_count = yesterdayRow.current_count;
-                sold_calculated = Math.max(0, starting_count + parseInt(restocks_received) - parseInt(current_count));
-            } else {
-                // First day for this item: current_count is the initial stock, no sales calculated yet
-                starting_count = parseInt(current_count);
-                sold_calculated = 0;
-            }
-            
-            // Insert or update today's count
-            db.run(`
-                INSERT OR REPLACE INTO history (item_name, date, yesterday_count, current_count, restocks_received, sold_calculated)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `, [item_name, today, starting_count, parseInt(current_count), parseInt(restocks_received), sold_calculated], (err) => {
-                if (err) {
-                    console.error('Error saving count:', err);
-                    res.status(500).json({ error: 'Failed to save count' });
-                } else {
-                    res.status(200).json({ 
-                        success: true,
-                        message: yesterdayRow ? `Sales calculated: ${sold_calculated} items sold yesterday!` : 'Initial count recorded!',
-                        sold_calculated: sold_calculated,
-                        item_name: item_name,
-                        starting_count: starting_count,
-                        current_count: parseInt(current_count),
-                        restocks_received: parseInt(restocks_received),
-                        date: today,
-                        is_first_day: !yesterdayRow
-                    });
-                }
-            });
+        const yesterdayResult = await pool.query('SELECT current_count FROM history WHERE item_name = $1 AND date = $2 ORDER BY id DESC LIMIT 1', 
+               [item_name, yesterdayStr]);
+        
+        let sold_calculated = 0;
+        let starting_count = 0;
+        
+        if (yesterdayResult.rows.length > 0) {
+            // Normal day: use yesterday's ending count as starting count
+            starting_count = yesterdayResult.rows[0].current_count;
+            sold_calculated = Math.max(0, starting_count + parseInt(restocks_received) - parseInt(current_count));
+        } else {
+            // First day for this item: current_count is the initial stock, no sales calculated yet
+            starting_count = parseInt(current_count);
+            sold_calculated = 0;
+        }
+        
+        // Insert or update today's count
+        await pool.query(`
+            INSERT INTO history (item_name, date, yesterday_count, current_count, restocks_received, sold_calculated)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (item_name, date) DO UPDATE SET
+                yesterday_count = $3,
+                current_count = $4,
+                restocks_received = $5,
+                sold_calculated = $6
+        `, [item_name, today, starting_count, parseInt(current_count), parseInt(restocks_received), sold_calculated]);
+        
+        res.status(200).json({ 
+            success: true,
+            message: yesterdayResult.rows.length > 0 ? `Sales calculated: ${sold_calculated} items sold yesterday!` : 'Initial count recorded!',
+            sold_calculated: sold_calculated,
+            item_name: item_name,
+            starting_count: starting_count,
+            current_count: parseInt(current_count),
+            restocks_received: parseInt(restocks_received),
+            date: today,
+            is_first_day: yesterdayResult.rows.length === 0
         });
     } catch (err) {
         console.error('Error saving count:', err);
@@ -137,27 +125,16 @@ app.get('/api/history', async (req, res) => {
     const offset = (page - 1) * limit;
     
     try {
-        db.get('SELECT COUNT(*) as count FROM history', (err, row) => {
-            if (err) {
-                console.error('Error fetching history count:', err);
-                res.status(500).json({ error: 'Failed to fetch history count' });
-            } else {
-                const total = row.count;
-                
-                db.all('SELECT * FROM history ORDER BY date DESC, id DESC LIMIT ? OFFSET ?', [parseInt(limit), parseInt(offset)], (err, rows) => {
-                    if (err) {
-                        console.error('Error fetching history:', err);
-                        res.status(500).json({ error: 'Failed to fetch history' });
-                    } else {
-                        res.json({
-                            data: rows,
-                            total,
-                            page: parseInt(page),
-                            totalPages: Math.ceil(total / limit)
-                        });
-                    }
-                });
-            }
+        const countResult = await pool.query('SELECT COUNT(*) as count FROM history');
+        const total = countResult.rows[0].count;
+        
+        const historyResult = await pool.query('SELECT * FROM history ORDER BY date DESC, id DESC LIMIT $1 OFFSET $2', [parseInt(limit), parseInt(offset)]);
+        
+        res.json({
+            data: historyResult.rows,
+            total,
+            page: parseInt(page),
+            totalPages: Math.ceil(total / limit)
         });
     } catch (err) {
         console.error('Error fetching history:', err);
@@ -187,32 +164,27 @@ app.get('/api/summary', async (req, res) => {
         if (days) {
             const date = new Date();
             date.setDate(date.getDate() - parseInt(days));
-            query += ' WHERE h.date >= ?';
+            query += ' WHERE h.date >= $1';
             params.push(date.toISOString().split('T')[0]);
         } else if (startDate && endDate) {
-            query += ' WHERE h.date BETWEEN ? AND ?';
+            query += ' WHERE h.date BETWEEN $1 AND $2';
             params.push(startDate, endDate);
         }
         
         query += ' GROUP BY item_name ORDER BY total_sold DESC';
         
-        db.all(query, params, (err, rows) => {
-            if (err) {
-                console.error('Error fetching summary:', err);
-                res.status(500).json({ error: 'Failed to fetch summary' });
-            } else {
-                // Simple calculation for display
-                const enhancedRows = rows.map(row => ({
-                    ...row,
-                    avg_starting_stock: Math.round(row.avg_starting_stock * 100) / 100,
-                    turnover_rate: row.avg_starting_stock > 0 
-                        ? Math.round((row.total_sold / row.avg_starting_stock / row.days_tracked) * 10000) / 100
-                        : 0
-                }));
-                
-                res.json(enhancedRows);
-            }
-        });
+        const summaryResult = await pool.query(query, params);
+        
+        // Simple calculation for display
+        const enhancedRows = summaryResult.rows.map(row => ({
+            ...row,
+            avg_starting_stock: Math.round(row.avg_starting_stock * 100) / 100,
+            turnover_rate: row.avg_starting_stock > 0 
+                ? Math.round((row.total_sold / row.avg_starting_stock / row.days_tracked) * 10000) / 100
+                : 0
+        }));
+        
+        res.json(enhancedRows);
     } catch (err) {
         console.error('Error fetching summary:', err);
         res.status(500).json({ error: 'Failed to fetch summary' });
@@ -224,16 +196,13 @@ app.delete('/api/counts/:itemName/:date', async (req, res) => {
     const { itemName, date } = req.params;
     
     try {
-        db.run('DELETE FROM history WHERE item_name = ? AND date = ?', [itemName, date], function(err) {
-            if (err) {
-                console.error('Error deleting entry:', err);
-                res.status(500).json({ error: 'Failed to delete entry' });
-            } else if (this.changes === 0) {
-                res.status(404).json({ error: 'Entry not found' });
-            } else {
-                res.json({ success: true, message: 'Entry deleted successfully' });
-            }
-        });
+        const result = await pool.query('DELETE FROM history WHERE item_name = $1 AND date = $2', [itemName, date]);
+        
+        if (result.rowCount === 0) {
+            res.status(404).json({ error: 'Entry not found' });
+        } else {
+            res.json({ success: true, message: 'Entry deleted successfully' });
+        }
     } catch (err) {
         console.error('Error deleting entry:', err);
         res.status(500).json({ error: 'Failed to delete entry' });
