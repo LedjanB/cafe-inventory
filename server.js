@@ -25,6 +25,17 @@ app.get('/script.js', (req, res) => {
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_KEY;
 
+// Debug environment variables
+console.log('Environment check:');
+console.log('SUPABASE_URL:', SUPABASE_URL ? 'SET' : 'UNDEFINED');
+console.log('SUPABASE_KEY:', SUPABASE_ANON_KEY ? 'SET' : 'UNDEFINED');
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error('Missing Supabase environment variables!');
+    console.error('SUPABASE_URL:', SUPABASE_URL);
+    console.error('SUPABASE_KEY:', SUPABASE_ANON_KEY);
+}
+
 // Helper function for Supabase API calls
 async function supabaseQuery(endpoint, options = {}) {
     const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;

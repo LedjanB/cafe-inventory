@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS history (
     id SERIAL PRIMARY KEY,
     item_name VARCHAR(50) NOT NULL,
     date DATE NOT NULL,
+    yesterday_count INTEGER DEFAULT 0,
     current_count INTEGER NOT NULL,
     restocks_received INTEGER DEFAULT 0,
     sold_calculated INTEGER DEFAULT 0,
