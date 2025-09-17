@@ -111,10 +111,11 @@ app.post('/api/counts', async (req, res) => {
             sold_calculated
         };
 
+        // Use proper Supabase upsert with conflict resolution
         await supabaseQuery('history', {
             method: 'POST',
             headers: {
-                'Prefer': 'resolution=merge-duplicates'
+                'Prefer': 'resolution=merge-duplicates,return=minimal'
             },
             body: JSON.stringify(upsertData)
         });
