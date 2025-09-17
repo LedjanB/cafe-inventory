@@ -1,8 +1,9 @@
 const express = require('express');
-const path = require('path');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const path = require('path');
 require('dotenv').config();
+const fetch = require('node-fetch');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -12,29 +13,12 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-// Explicit routes for static files (Vercel fix)
-app.get('/style.css', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'style.css'));
-});
+// Supabase configuration - Render handles env vars properly
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://aunxklyjxakbprknyisr.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bnhrbHlqeGFrYnBya255aXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNTcxMTksImV4cCI6MjA3MzYzMzExOX0.sfN0rYnz7gKYj4eHXakgmBerfzvEmScK7hJwrSrvM-s';
 
-app.get('/script.js', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'script.js'));
-});
-
-// Supabase configuration
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_KEY;
-
-// Debug environment variables
-console.log('Environment check:');
-console.log('SUPABASE_URL:', SUPABASE_URL ? 'SET' : 'UNDEFINED');
-console.log('SUPABASE_KEY:', SUPABASE_ANON_KEY ? 'SET' : 'UNDEFINED');
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.error('Missing Supabase environment variables!');
-    console.error('SUPABASE_URL:', SUPABASE_URL);
-    console.error('SUPABASE_KEY:', SUPABASE_ANON_KEY);
-}
+console.log('🚀 Render deployment starting...');
+console.log('✅ App running on port:', port);
 
 // Helper function for Supabase API calls
 async function supabaseQuery(endpoint, options = {}) {
@@ -153,27 +137,31 @@ app.post('/api/counts', async (req, res) => {
 });
 
 app.get('/api/history', async (req, res) => {
-    const { page = 1, limit = 10 } = req.query;
-    const offset = (page - 1) * limit;
-    
     try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        
         // Get total count first
-        const countResult = await supabaseQuery('history?select=count(*)', {
+        const countResult = await supabaseQuery('history?select=count', {
             headers: {
                 'Prefer': 'count=exact'
             }
         });
         
-        const total = countResult.count;
+        const totalCount = countResult.length > 0 ? countResult[0].count : 0;
         
         // Get paginated data
-        const historyResult = await supabaseQuery(`history?select=*&order=date.desc,item_name.asc&limit=${limit}&offset=${offset}`);
+        const data = await supabaseQuery(`history?select=*&order=date.desc,item_name.asc&limit=${limit}&offset=${offset}`);
         
         res.json({
-            data: historyResult,
-            total,
-            page: parseInt(page),
-            totalPages: Math.ceil(total / limit)
+            data: data,
+            pagination: {
+                page: page,
+                limit: limit,
+                total: totalCount,
+                totalPages: Math.ceil(totalCount / limit)
+            }
         });
     } catch (err) {
         console.error('Error fetching history:', err);
