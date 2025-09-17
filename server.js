@@ -62,11 +62,25 @@ initializeDatabase();
 // API Routes
 app.get('/api/counts/today', async (req, res) => {
     try {
+        console.log('Getting today\'s counts...');
+        console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+        console.log('DATABASE_URL starts with:', process.env.DATABASE_URL?.substring(0, 20));
+        
         const today = new Date().toISOString().split('T')[0];
+        console.log('Today\'s date:', today);
+        
         const result = await pool.query('SELECT * FROM history WHERE date = $1', [today]);
+        console.log('Query result:', result.rows.length, 'rows');
+        
         res.json(result.rows);
     } catch (err) {
         console.error('Error fetching today\'s counts:', err);
+        console.error('Error details:', {
+            message: err.message,
+            code: err.code,
+            detail: err.detail,
+            stack: err.stack
+        });
         res.status(500).json({ error: 'Failed to fetch today\'s counts' });
     }
 });
