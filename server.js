@@ -13,6 +13,15 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
+// Explicit routes for static files (Vercel fix)
+app.get('/style.css', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'style.css'));
+});
+
+app.get('/script.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'script.js'));
+});
+
 // Database configuration
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
