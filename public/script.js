@@ -65,6 +65,7 @@ function displayValidationErrors(errors) {
 // API functions
 async function apiCall(url, options = {}) {
     try {
+        console.log('Making API call to:', url, 'with options:', options);
         const response = await fetch(url, {
             headers: {
                 'Content-Type': 'application/json',
@@ -73,7 +74,9 @@ async function apiCall(url, options = {}) {
             ...options
         });
         
+        console.log('Response status:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
         
         if (!response.ok) {
             throw new Error(data.error || `HTTP error! status: ${response.status}`);
