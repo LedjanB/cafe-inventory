@@ -115,7 +115,7 @@ app.post('/api/counts', async (req, res) => {
         const updateResult = await supabaseQuery(`history?item_name=eq.${encodeURIComponent(item_name)}&date=eq.${today}`, {
             method: 'PATCH',
             headers: {
-                'Prefer': 'return=minimal'
+                'Prefer': 'return=representation'
             },
             body: JSON.stringify({
                 yesterday_count: starting_count,
@@ -125,8 +125,8 @@ app.post('/api/counts', async (req, res) => {
             })
         });
 
-        // If no rows were updated, insert new record
-        if (updateResult.length === 0) {
+        // If no rows were updated (empty array), insert new record
+        if (!updateResult || updateResult.length === 0) {
             await supabaseQuery('history', {
                 method: 'POST',
                 headers: {
