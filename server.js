@@ -1,5 +1,4 @@
 const express = require('express');
-const { Pool } = require('pg');
 const path = require('path');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -22,41 +21,45 @@ app.get('/script.js', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'script.js'));
 });
 
-// Database configuration
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || process.env.SUPABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    },
-    // Add connection timeout and retry settings
-    connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 30000,
-    max: 10
-});
+// Supabase configuration
+const SUPABASE_URL = 'https://aunxklyjxakbprknyisr.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bnhrbHlqeGFrYnBya255aXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNTcxMTksImV4cCI6MjA3MzYzMzExOX0.sfN0rYnz7gKYj4eHXakgmBerfzvEmScK7hJwrSrvM-s';
+
+// Helper function for Supabase API calls
+async function supabaseQuery(endpoint, options = {}) {
+    const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+    const response = await fetch(url, {
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+            ...options.headers
+        },
+        ...options
+    });
+    
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Supabase API error: ${response.status} ${error}`);
+    }
+    
+    return response.json();
+}
 
 // Initialize database
 async function initializeDatabase() {
     try {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS history (
-                id SERIAL PRIMARY KEY,
-                item_name VARCHAR(255) NOT NULL,
-                date DATE NOT NULL DEFAULT CURRENT_DATE,
-                yesterday_count INTEGER DEFAULT 0,
-                current_count INTEGER NOT NULL,
-                restocks_received INTEGER DEFAULT 0,
-                sold_calculated INTEGER DEFAULT 0,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                UNIQUE(item_name, date)
-            )
-        `);
+        await supabaseQuery('history', {
+            method: 'POST',
+            body: JSON.stringify({
+                select: '*',
+                eq: 'id',
+                neq: 'id'
+            })
+        });
         
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_history_item_date 
-            ON history(item_name, date)
-        `);
-        
-        console.log('PostgreSQL database initialized');
+        console.log('Supabase database initialized');
     } catch (err) {
         console.error('Database initialization error:', err);
     }
@@ -69,24 +72,27 @@ initializeDatabase();
 app.get('/api/counts/today', async (req, res) => {
     try {
         console.log('Getting today\'s counts...');
-        console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
-        console.log('DATABASE_URL starts with:', process.env.DATABASE_URL?.substring(0, 20));
         
         const today = new Date().toISOString().split('T')[0];
         console.log('Today\'s date:', today);
         
-        const result = await pool.query('SELECT * FROM history WHERE date = $1', [today]);
-        console.log('Query result:', result.rows.length, 'rows');
+        const result = await supabaseQuery('history', {
+            method: 'GET',
+            headers: {
+                'Range': '0-9'
+            },
+            body: JSON.stringify({
+                select: '*',
+                eq: 'date',
+                eq: today
+            })
+        });
         
-        res.json(result.rows);
+        console.log('Query result:', result.length, 'rows');
+        
+        res.json(result);
     } catch (err) {
         console.error('Error fetching today\'s counts:', err);
-        console.error('Error details:', {
-            message: err.message,
-            code: err.code,
-            detail: err.detail,
-            stack: err.stack
-        });
         res.status(500).json({ error: 'Failed to fetch today\'s counts' });
     }
 });
@@ -105,15 +111,26 @@ app.post('/api/counts', async (req, res) => {
         const yesterdayStr = yesterday.toISOString().split('T')[0];
         
         // Get yesterday's ending count (which becomes today's starting count)
-        const yesterdayResult = await pool.query('SELECT current_count FROM history WHERE item_name = $1 AND date = $2 ORDER BY id DESC LIMIT 1', 
-               [item_name, yesterdayStr]);
+        const yesterdayResult = await supabaseQuery('history', {
+            method: 'GET',
+            headers: {
+                'Range': '0-0'
+            },
+            body: JSON.stringify({
+                select: 'current_count',
+                eq: 'item_name',
+                eq: item_name,
+                eq: 'date',
+                eq: yesterdayStr
+            })
+        });
         
         let sold_calculated = 0;
         let starting_count = 0;
         
-        if (yesterdayResult.rows.length > 0) {
+        if (yesterdayResult.length > 0) {
             // Normal day: use yesterday's ending count as starting count
-            starting_count = yesterdayResult.rows[0].current_count;
+            starting_count = yesterdayResult[0].current_count;
             sold_calculated = Math.max(0, starting_count + parseInt(restocks_received) - parseInt(current_count));
         } else {
             // First day for this item: current_count is the initial stock, no sales calculated yet
@@ -122,26 +139,28 @@ app.post('/api/counts', async (req, res) => {
         }
         
         // Insert or update today's count
-        await pool.query(`
-            INSERT INTO history (item_name, date, yesterday_count, current_count, restocks_received, sold_calculated)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (item_name, date) DO UPDATE SET
-                yesterday_count = $3,
-                current_count = $4,
-                restocks_received = $5,
-                sold_calculated = $6
-        `, [item_name, today, starting_count, parseInt(current_count), parseInt(restocks_received), sold_calculated]);
+        await supabaseQuery('history', {
+            method: 'POST',
+            body: JSON.stringify({
+                item_name,
+                date: today,
+                yesterday_count: starting_count,
+                current_count: parseInt(current_count),
+                restocks_received: parseInt(restocks_received),
+                sold_calculated
+            })
+        });
         
         res.status(200).json({ 
             success: true,
-            message: yesterdayResult.rows.length > 0 ? `Sales calculated: ${sold_calculated} items sold yesterday!` : 'Initial count recorded!',
+            message: yesterdayResult.length > 0 ? `Sales calculated: ${sold_calculated} items sold yesterday!` : 'Initial count recorded!',
             sold_calculated: sold_calculated,
             item_name: item_name,
             starting_count: starting_count,
             current_count: parseInt(current_count),
             restocks_received: parseInt(restocks_received),
             date: today,
-            is_first_day: yesterdayResult.rows.length === 0
+            is_first_day: yesterdayResult.length === 0
         });
     } catch (err) {
         console.error('Error saving count:', err);
@@ -154,13 +173,21 @@ app.get('/api/history', async (req, res) => {
     const offset = (page - 1) * limit;
     
     try {
-        const countResult = await pool.query('SELECT COUNT(*) as count FROM history');
-        const total = countResult.rows[0].count;
+        const countResult = await supabaseQuery('history', {
+            method: 'HEAD'
+        });
         
-        const historyResult = await pool.query('SELECT * FROM history ORDER BY date DESC, id DESC LIMIT $1 OFFSET $2', [parseInt(limit), parseInt(offset)]);
+        const total = parseInt(countResult.headers.get('row-count'));
+        
+        const historyResult = await supabaseQuery('history', {
+            method: 'GET',
+            headers: {
+                'Range': `${offset}-${offset + limit - 1}`
+            }
+        });
         
         res.json({
-            data: historyResult.rows,
+            data: historyResult,
             total,
             page: parseInt(page),
             totalPages: Math.ceil(total / limit)
@@ -175,37 +202,24 @@ app.get('/api/summary', async (req, res) => {
     const { days, startDate, endDate } = req.query;
     
     try {
-        let query = `
-            SELECT 
-                item_name,
-                SUM(sold_calculated) as total_sold,
-                SUM(restocks_received) as total_restocked,
-                AVG(yesterday_count) as avg_starting_stock,
-                COUNT(*) as days_tracked,
-                (SELECT current_count FROM history h2 
-                 WHERE h2.item_name = h.item_name 
-                 ORDER BY h2.date DESC, h2.id DESC LIMIT 1) as current_stock
-            FROM history h
-        `;
+        let query = '';
         
         const params = [];
         
         if (days) {
             const date = new Date();
             date.setDate(date.getDate() - parseInt(days));
-            query += ' WHERE h.date >= $1';
-            params.push(date.toISOString().split('T')[0]);
+            query += `?eq(date,${date.toISOString().split('T')[0]})`;
         } else if (startDate && endDate) {
-            query += ' WHERE h.date BETWEEN $1 AND $2';
-            params.push(startDate, endDate);
+            query += `?between(date,${startDate},${endDate})`;
         }
         
-        query += ' GROUP BY item_name ORDER BY total_sold DESC';
-        
-        const summaryResult = await pool.query(query, params);
+        const summaryResult = await supabaseQuery(`history${query}`, {
+            method: 'GET'
+        });
         
         // Simple calculation for display
-        const enhancedRows = summaryResult.rows.map(row => ({
+        const enhancedRows = summaryResult.map(row => ({
             ...row,
             avg_starting_stock: Math.round(row.avg_starting_stock * 100) / 100,
             turnover_rate: row.avg_starting_stock > 0 
@@ -225,9 +239,11 @@ app.delete('/api/counts/:itemName/:date', async (req, res) => {
     const { itemName, date } = req.params;
     
     try {
-        const result = await pool.query('DELETE FROM history WHERE item_name = $1 AND date = $2', [itemName, date]);
+        const result = await supabaseQuery(`history?eq(item_name,${itemName})&eq(date,${date})`, {
+            method: 'DELETE'
+        });
         
-        if (result.rowCount === 0) {
+        if (result.length === 0) {
             res.status(404).json({ error: 'Entry not found' });
         } else {
             res.json({ success: true, message: 'Entry deleted successfully' });
