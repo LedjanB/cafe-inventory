@@ -174,6 +174,7 @@ app.get('/api/summary', (req, res) => {
         
         const enhancedRows = rows.map(row => ({
             item_name: row.item_name,
+            total_stock: Math.round((row.avg_starting_stock + row.total_restocked) * 100) / 100,
             total_sold: row.total_sold,
             total_restocked: row.total_restocked,
             avg_starting_stock: Math.round(row.avg_starting_stock * 100) / 100,

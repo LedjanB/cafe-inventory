@@ -76,7 +76,20 @@
                         <div id="no-entries" class="text-center hidden">
                             <p>No entries recorded for today yet.</p>
                         </div>
-                        <div id="entries-list"></div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Item Name</th>
+                                    <th>Starting Stock</th>
+                                    <th>Restocks Received</th>
+                                    <th>Current Count</th>
+                                    <th>Sold (Calculated)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="today-entries-tbody">
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

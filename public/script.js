@@ -465,6 +465,7 @@ async function loadSummary() {
             tbody.innerHTML = summary.map(item => `
                 <tr>
                     <td><strong>${item.item_name}</strong></td>
+                    <td><strong style="color: #007bff; font-size: 1.1em;">${item.total_stock}</strong></td>
                     <td><strong style="color: #28a745; font-size: 1.1em;">${item.total_sold}</strong></td>
                     <td>${item.total_restocked}</td>
                     <td>${item.current_stock}</td>
