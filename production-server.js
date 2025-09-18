@@ -157,8 +157,7 @@ app.get('/api/summary', (req, res) => {
             item_name,
             SUM(sold_calculated) as total_sold,
             SUM(restocks_received) as total_restocked,
-            AVG(yesterday_count) as avg_starting_stock,
-            MAX(current_count) as current_stock,
+            (SELECT current_count FROM inventory i2 WHERE i2.item_name = inventory.item_name ORDER BY date DESC LIMIT 1) as current_stock,
             COUNT(*) as days_tracked
         FROM inventory 
         ${whereClause}
@@ -174,14 +173,16 @@ app.get('/api/summary', (req, res) => {
         
         const enhancedRows = rows.map(row => ({
             item_name: row.item_name,
-            total_stock: Math.round((row.avg_starting_stock + row.total_restocked) * 100) / 100,
+            total_stock: Math.round((row.current_stock + row.total_sold) * 100) / 100,
             total_sold: row.total_sold,
             total_restocked: row.total_restocked,
-            avg_starting_stock: Math.round(row.avg_starting_stock * 100) / 100,
+            avg_starting_stock: row.days_tracked > 0
+                ? Math.round((row.total_sold / row.days_tracked) * 100) / 100
+                : 0,
             current_stock: row.current_stock,
             days_tracked: row.days_tracked,
-            turnover_rate: row.avg_starting_stock > 0 && row.days_tracked > 0
-                ? Math.round((row.total_sold / row.avg_starting_stock / row.days_tracked) * 100 * 100) / 100
+            turnover_rate: row.days_tracked > 0
+                ? Math.round((row.total_sold / row.days_tracked) * 100 * 100) / 100
                 : 0
         }));
         
